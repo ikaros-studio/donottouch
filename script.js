@@ -35,8 +35,8 @@ window.onload = function () {
   video.height = winheight;
   var img = document.getElementById("earth");
 
-  var earthradius = 400;
-  var scale = Math.min(orbitCanvas.width / earthradius, orbitCanvas.height / earthradius);
+  var earthradius = 650;
+  // var scale = Math.min(orbitCanvas.width / earthradius, orbitCanvas.height / earthradius);
   var left = orbitCanvas.width / 2 - earthradius / 2;
   var top = orbitCanvas.height / 2 - earthradius / 2;
 
@@ -55,7 +55,7 @@ function reset() {
 reset();
 
 // SET BRUSH VARIABLES
-var brushradius = 35;
+var brushradius = 55;
 var brushhardness = 0.2;
 var brushalpha = 0.5;
 
@@ -259,10 +259,10 @@ video.addEventListener("play", () => {
     // faceapi.draw.drawFaceLandmarks(faceCanvas, resizedDetections);
 
 
-    mirroredX = faceCanvas.width - resizedDetections[0].landmarks.getNose()[8].x;
+    mirroredX = faceCanvas.width - resizedDetections[0].landmarks.getNose()[7].x;
 
     faceX = mirroredX;
-    faceY = resizedDetections[0].landmarks.getNose()[8].y;
+    faceY = resizedDetections[0].landmarks.getNose()[7].y;
 
     draw();
   }, 60);

@@ -6,6 +6,7 @@
     <meta http-equiv="X-UA-Compatible" content="ie=edge" />
     <title>Document</title>
     <script defer src="face-api.min.js"></script>
+
     <script defer src="script.js"></script>
     <style>
       body {
@@ -35,12 +36,11 @@
   <body>
     <video id="video" autoplay muted></video>
     <canvas
-      style="background-color: black"
-      width="2000"
-      height="1560"
+      style="background-color: white"
+      width="4000"
+      height="3120"
       id="orbitCanvas"
     >
-      Your browser does not support the HTML5 canvas tag.
     </canvas>
     <canvas
       id="faceCanvas"
@@ -48,11 +48,11 @@
       width="720"
       height="560"
     ></canvas>
-    <img
+    <!-- <img
       hidden
       id="earth"
       src="http://www.nasa.gov/centers/goddard/images/content/638831main_globe_east_2048.jpg"
-    />
-    <script></script>
+    /> -->
+    <img hidden id="earth" src="./assets/img/earth_whiteBG.jpg" />
   </body>
 </html>
