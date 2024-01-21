@@ -109,7 +109,7 @@ function loadEarth() {
   const earthGeometry = new THREE.SphereGeometry(0.4, 128, 128);
 
   const earthTexture = new THREE.TextureLoader().load(
-    "./assets/earthTexture.jpeg"
+    "./public/earthTexture.jpeg"
   );
 
   const earthShaderMaterial = new THREE.ShaderMaterial({
