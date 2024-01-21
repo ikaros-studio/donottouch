@@ -93,12 +93,20 @@ async function main() {
 }
 
 async function estimatePoses() {
-  poses = await detector.estimatePoses(webcam);
 
-  if (poses.length !== poses.length) {
-    // console.log("switched to " + poses.length + " people");
-    poses = poses;
+  if (!detector) {
+    return;
   }
+
+  else {
+    poses = await detector.estimatePoses(webcam);
+
+    if (poses.length !== poses.length) {
+      // console.log("switched to " + poses.length + " people");
+      poses = poses;
+    }
+  }
+
 }
 
 let earthMesh;
