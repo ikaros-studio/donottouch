@@ -10,6 +10,9 @@ import * as poseDetection from "@tensorflow-models/pose-detection";
 import * as tf from "@tensorflow/tfjs-core";
 import "@tensorflow/tfjs-backend-webgl";
 import globalTemp from "./datasets/data.js";
+import fragmentShader from '/shaders/earthFs.glsl?raw';
+import vertexShader from '/shaders/earthVs.glsl?raw';
+
 
 const width = window.innerWidth,
   height = window.innerHeight;
@@ -28,18 +31,6 @@ navigator.mediaDevices
   .then((stream) => {
     webcam.srcObject = stream;
   });
-
-// Init Posenet Detector
-const detectorConfig = {
-  // TODO: consider MULTIPOSE_THUNDER
-  modelType: poseDetection.movenet.modelType.MULTIPOSE_LIGHTNING,
-  enableTracking: true,
-  trackerType: poseDetection.TrackerType.BoundingBox,
-};
-const detector = await poseDetection.createDetector(
-  poseDetection.SupportedModels.MoveNet,
-  detectorConfig
-);
 
 const camera = new THREE.PerspectiveCamera(70, width / height, 0.01, 10);
 camera.position.z = 1;
@@ -67,7 +58,7 @@ const bloomPass = new UnrealBloomPass(
   0.85
 );
 bloomPass.threshold = 0.1;
-bloomPass.strength = 1.5;
+bloomPass.strength = .5;
 bloomPass.radius = 1;
 const bloomComposer = new EffectComposer(renderer);
 bloomComposer.setSize(width * pixelRatio, height * pixelRatio);
@@ -76,6 +67,7 @@ bloomComposer.addPass(renderScene);
 bloomComposer.addPass(bloomPass);
 
 let poses = [];
+let detector = null;
 // set random Temp from JSON object
 let tempKeys = Object.keys(globalTemp.data);
 let randomTemp = {
@@ -83,6 +75,22 @@ let randomTemp = {
   temp: 0.0,
 };
 
+main();
+
+async function main() {
+  // Init Posenet Detector
+  const detectorConfig = {
+    // TODO: consider MULTIPOSE_THUNDER
+    modelType: poseDetection.movenet.modelType.MULTIPOSE_LIGHTNING,
+    enableTracking: true,
+    trackerType: poseDetection.TrackerType.BoundingBox,
+  };
+  detector = await poseDetection.createDetector(
+    poseDetection.SupportedModels.MoveNet,
+    detectorConfig
+  );
+
+}
 
 async function estimatePoses() {
   poses = await detector.estimatePoses(webcam);
@@ -107,145 +115,15 @@ function loadEarth() {
   const earthShaderMaterial = new THREE.ShaderMaterial({
 
     // TODO: Investigate at what value stage the sphere capsulation is created. Also use the tempdata
-    vertexShader: `
-uniform float tempValue;
-uniform vec3 uKeypoints[128];
-uniform vec3 uPrevKeypoints[128];
-varying vec2 vUv;
-uniform float time;
-uniform float transitionTimer;
-const float particleSize = 0.1;
-// Define PI
-const float PI = 3.1415926535897932384626433832795;
-
-// Define noiseScale and noiseSpeed as constants
-const float noiseScale = 2.0; // Adjust this value as needed
-const float noiseSpeed = 0.0001; // Adjust this value as needed
-
-// Function to create a rotation matrix around the Y-axis
-mat4 rotateY(float angle) {
-    float c = cos(angle);
-    float s = sin(angle);
-    return mat4(
-        c, 0.0, s, 0.0,
-        0.0, 1.0, 0.0, 0.0,
-        -s, 0.0, c, 0.0,
-        0.0, 0.0, 0.0, 1.0
-    );
-}
-
-float random(vec2 st) {
-  return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123);
-}
-
-float noise(vec2 st) {
-  vec2 i = floor(st);
-  vec2 f = fract(st);
-
-  // Four corners in 2D of a tile
-  float a = random(i);
-  float b = random(i + vec2(1.0, 0.0));
-  float c = random(i + vec2(0.0, 1.0));
-  float d = random(i + vec2(1.0, 1.0));
-
-  // Smooth Interpolation
-
-  // Cubic Hermite Curve.  Same as SmoothStep()
-  vec2 u = f*f*(3.0-2.0*f);
-
-  // Mix 4 corners percentages
-  return mix(a, b, u.x) +
-          (c - a)* u.y * (1.0 - u.x) +
-          (d - b) * u.x * u.y;
-}
-
-// Smoothing function for interpolation
-float smoothInterpolation(float progress) {
-    return smoothstep(0.0, 1.0, progress);
-}
-
-// Example of an easeInOutSine function
-float easeInOutSine(float t) {
-    return -(cos(PI * t) - 1.0) / 2.0;
-}
-
-void main() {
-    float interpDuration = 10.0; // Example: 10 seconds
-
-    // Calculate normalized time with respect to interpDuration
-    float normalizedTime = mod(time, interpDuration) / interpDuration;
-
-    // Use normalizedTime to calculate interpProgress
-    float interpProgress;
-    if (normalizedTime < 0.5) {
-        // First half of the cycle (accelerating)
-        interpProgress = easeInOutSine(normalizedTime * 2.0); // Range [0, 1]
-    } else {
-        // Second half of the cycle (decelerating)
-        interpProgress = easeInOutSine((1.0 - normalizedTime) * 2.0); // Range [1, 0]
-    }
-
-    vUv = uv;
-    float rotationSpeed = 0.15;
-    mat4 rotationMatrix = rotateY(time * rotationSpeed);
-    vec4 rotatedPosition = modelMatrix * rotationMatrix * vec4(position, 1.0);
-
-    float influenceRadius = 0.3;
-    float deformationStrength = 0.2; // Reduced strength for smoother effect
-    vec3 deformation = vec3(0.0, 0.0, 0.0);
-    mat4 inverseRotationMatrix = rotateY(0.0);
-
-    // float interpProgress = smoothInterpolation(mod(time, interpDuration) / interpDuration);
-
-    // Apply additional time-based distortion for fluid-like effect
-    float timeBasedDistortion = sin(time * 0.5) * 2.0; // Adjust as needed for desired effect
-
-    
-    // Initialize finalPosition with rotatedPosition
-    vec4 finalPosition = rotatedPosition;
-    
-    // Apply separate distortion for each keypoint
-    for (int i = 0; i < 128; i++) {
-        vec3 interpolatedKeypoint = mix(uPrevKeypoints[i], uKeypoints[i], interpProgress);
-        vec4 keypointLocal = inverseRotationMatrix * vec4(interpolatedKeypoint, 1.0);
-        float distance = length(keypointLocal.xyz - rotatedPosition.xyz);
-        if (distance < influenceRadius) {
-            float deformationFactor = deformationStrength * (1.0 - smoothstep(0.0, influenceRadius, distance)) * noiseScale;
-    
-            // Apply noise to the deformation factor
-            vec2 noiseInput = keypointLocal.xy * noiseScale + time * noiseSpeed;
-            float noiseValue = noise(noiseInput);
-            deformationFactor *= noiseValue; // Scale deformation by noise value
-    
-            // Calculate deformation per keypoint
-            vec3 keypointDeformation = normalize(keypointLocal.xyz - rotatedPosition.xyz) * deformationFactor * timeBasedDistortion;
-    
-            // Apply the deformation to the vertex position
-            finalPosition.xyz += keypointDeformation;
-        }
-    }
-    
-    gl_Position = projectionMatrix * viewMatrix * finalPosition;
-
-
-}
-`,
-    fragmentShader: `
-    uniform sampler2D uTexture;
-    uniform float uTime;
-    varying vec2 vUv;
-    void main() {
-      vec4 color = texture2D(uTexture, vUv);
-      gl_FragColor = color;
-  }
-    `,
+    vertexShader,
+    fragmentShader,
     uniforms: {
       uKeypoints: { value: new Array(128).fill(new THREE.Vector3()) }, // Initialize keypoints array
       uPrevKeypoints: { value: new Array(128).fill(new THREE.Vector3()) }, // Initialize previous keypoints array
       uTexture: { value: earthTexture },
       time: { value: 0 },
       transitionTimer: { value: 0.0 },
-      tempValue: { value: randomTemp.temp  },
+      tempValue: { value: 0.0 },
     },
   });
 
@@ -272,24 +150,6 @@ function getY(yValue) {
   return -((yValue / webcam.videoHeight) * 2 - 1) //* scaleFactor;
 }
 
-const relevantKeypointNames = [
-  "nose",
-  "leftEye",
-  "rightEye",
-  "left_shoulder",
-  "right_shoulder",
-  "left_elbow",
-  "right_elbow",
-  "left_wrist",
-  "right_wrist",
-  "left_hip",
-  "right_hip",
-  "left_knee",
-  "right_knee",
-  "left_ankle",
-  "right_ankle",
-]
-
 const bodySegments = [
   ['left_shoulder', 'left_elbow'],
   ['left_elbow', 'left_wrist'],
@@ -315,7 +175,7 @@ const transitionDuration = 5.0;  // Duration of the transition in seconds
 setInterval(() => {
   randomTemp.year = tempKeys[Math.floor(Math.random() * tempKeys.length)];
   randomTemp.temp = globalTemp.data[randomTemp.year];
-  console.log(randomTemp);
+  console.log(randomTemp.temp);
   earthMesh.material.uniforms.tempValue.value = randomTemp.temp;
 
 }, 1000);
