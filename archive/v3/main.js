@@ -9,7 +9,7 @@ import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js"
 import * as poseDetection from "@tensorflow-models/pose-detection";
 import * as tf from "@tensorflow/tfjs-core";
 import "@tensorflow/tfjs-backend-webgl";
-import globalTemp from "./datasets/data.js";
+import globalTemp from "../../datasets/data.js";
 import fragmentShader from '/shaders/earthFs.glsl?raw';
 import vertexShader from '/shaders/earthVs.glsl?raw';
 

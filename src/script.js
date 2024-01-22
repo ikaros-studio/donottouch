@@ -10,7 +10,7 @@ import * as tf from "@tensorflow/tfjs-core";
 import "@tensorflow/tfjs-backend-webgl";
 
 // Load data
-import globalTemp from "./datasets/data.js";
+import globalTemp from "../datasets/data.js";
 
 let scene, camera, renderer, earth, container, blobScale = .2, width = window.innerWidth, height = window.innerHeight, pixelRatio = 1, bloomComposer, poses = [],
     detector = null,
@@ -111,7 +111,7 @@ const createLights = () => {
 
 const createEarth = () => {
     const textureLoader = new THREE.TextureLoader();
-    const earthTexture = textureLoader.load("/earthTexture.jpeg");
+    const earthTexture = textureLoader.load("/textures/earthTexture.jpeg");
     earthTexture.anisotropy = 8;
 
     const icosahedronGeometry = new THREE.IcosahedronGeometry(0.7, 32);
@@ -362,10 +362,6 @@ const render = () => {
     }
     // Distort the earth
     distortEarth();
-
-
-
-
 
     earth.rotation.y += 0.001;
     // renderer.render(scene, camera);
