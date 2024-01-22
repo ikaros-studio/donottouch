@@ -75,8 +75,8 @@ void main() {
     mat4 rotationMatrix = rotateY(time * rotationSpeed);
     vec4 rotatedPosition = modelMatrix * rotationMatrix * vec4(position, 1.0);
 
-    float influenceRadius = 0.3;
-    float deformationStrength = 0.2; // Reduced strength for smoother effect
+    float influenceRadius = 0.1;
+    float deformationStrength = 0.1; // Reduced strength for smoother effect
     vec3 deformation = vec3(0.0, 0.0, 0.0);
     mat4 inverseRotationMatrix = rotateY(0.0);
 
@@ -94,15 +94,15 @@ void main() {
         vec4 keypointLocal = inverseRotationMatrix * vec4(interpolatedKeypoint, 1.0);
         float distance = length(keypointLocal.xyz - rotatedPosition.xyz);
         if(distance < influenceRadius) {
-            float deformationFactor = deformationStrength * (1.0 - smoothstep(0.0, influenceRadius, distance)) * noiseScale + tempValue;
+            float deformationFactor = deformationStrength * (1.0 - smoothstep(0.0, 0.3, distance)) * noiseScale;
 
             // Apply noise to the deformation factor
             vec2 noiseInput = keypointLocal.xy * noiseScale + time * noiseSpeed;
             float noiseValue = noise(noiseInput);
-            deformationFactor *= noiseValue; // Scale deformation by noise value
+            // deformationFactor *= noiseValue; // Scale deformation by noise value
 
             // Calculate deformation per keypoint
-            vec3 keypointDeformation = normalize(keypointLocal.xyz - rotatedPosition.xyz) * deformationFactor * timeBasedDistortion;
+            vec3 keypointDeformation = normalize(keypointLocal.xyz - rotatedPosition.xyz) * deformationFactor;
 
             // Apply the deformation to the vertex position
             finalPosition.xyz += keypointDeformation;

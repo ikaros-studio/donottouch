@@ -4,6 +4,7 @@
     "@tensorflow/tfjs-backend-webgl": "^4.15.0",
     "@tensorflow/tfjs-converter": "^4.15.0",
     "@tensorflow/tfjs-core": "^4.15.0",
+    "simplex-noise": "^4.0.1",
     "three": "^0.160.0"
   },
   "devDependencies": {
