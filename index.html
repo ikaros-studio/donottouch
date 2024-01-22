@@ -4,10 +4,24 @@
   <style>
     body {
       margin: 0;
+      font-family: sans-serif;
     }
 
     canvas {
       display: block;
+    }
+
+
+
+    #yearNumber {
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 20;
+      font-size: 2em;
+      color: white;
+      background-color: black;
+      padding: 0.5em;
     }
 
     video {
@@ -25,6 +39,7 @@
 
 </head>
 <body>
+  <div id="yearNumber">Year: </div>
   <video hidden id="webcam" autoplay></video>
   <div id="canvasContainer"></div>
 </body>

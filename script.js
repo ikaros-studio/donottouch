@@ -9,6 +9,8 @@ import * as poseDetection from "@tensorflow-models/pose-detection";
 import * as tf from "@tensorflow/tfjs-core";
 import "@tensorflow/tfjs-backend-webgl";
 
+// Load data
+import globalTemp from "./datasets/data.js";
 
 let scene, camera, renderer, earth, container, blobScale = .2, width = window.innerWidth, height = window.innerHeight, pixelRatio = 1, bloomComposer, poses = [],
     detector = null,
@@ -18,9 +20,14 @@ let scene, camera, renderer, earth, container, blobScale = .2, width = window.in
     earthCenter,
     earthRadius,
     keypoint3DPositions = [],
-    currentForceEffects = [];
+    currentForceEffects = [],
+    collision = false,
+    currentTemp = null,
+    previousCollisionState = false,
+    year = 1979;
 
 const setup = async () => {
+
     // Init Tensorflow
     await tf.ready();
     console.log("TF is ready");
@@ -105,9 +112,9 @@ const createLights = () => {
 const createEarth = () => {
     const textureLoader = new THREE.TextureLoader();
     const earthTexture = textureLoader.load("/earthTexture.jpeg");
-    earthTexture.anisotropy = 4;
+    earthTexture.anisotropy = 8;
 
-    const icosahedronGeometry = new THREE.IcosahedronGeometry(0.4, 16);
+    const icosahedronGeometry = new THREE.IcosahedronGeometry(0.7, 32);
     const lambertMaterial = new THREE.MeshPhongMaterial({ map: earthTexture });
 
     earth = new THREE.Mesh(icosahedronGeometry, lambertMaterial);
@@ -269,55 +276,34 @@ const checkCollisionForKeyPoints = (pose) => {
 
 const distortEarth = () => {
 
-
-}
-
-const lerp = (start, end, t) => {
-    return start * (1 - t) + end * t;
-}
-
-
-const render = () => {
-    estimatePoses();
-    // Distortion effect
-    let time = Date.now()
     const positions = earth.geometry.attributes.position;
 
-    // Reset the positions
-    keypoint3DPositions = [];
-
-    poses.forEach((pose, poseIndex) => {
-        drawPoseParticles(pose, poseIndex)
-        const collision = checkCollisionForKeyPoints(pose)
-
-        let targetBlobScale = collision ? 0.3 : 0.0;
-        let transitionSpeed = collision ? 0.05 : 0.01; // Adjust these values as needed
-
-        blobScale = lerp(blobScale, targetBlobScale, transitionSpeed);
-        console.log(collision)
-
-    });
-
+    // Distortion effect
+    let time = Date.now()
 
     for (let i = 0; i < positions.count; i++) {
         let v = new THREE.Vector3().fromBufferAttribute(positions, i);
         v.normalize();
-        let targetForceEffect = 0.3;
-        keypoint3DPositions.forEach(keypoint3D => {
-            const distanceToKeypoint = keypoint3D.distanceTo(v);
-            // Adjust the effect based on distance; this formula can be tweaked
-            targetForceEffect += Math.max(0, 1 - distanceToKeypoint / 2); // Decrease influence with distance
-        });
+        let targetForceEffect = 1.5;
 
-        // Normalize the effect based on the number of keypoints to prevent excessive distortion
-        if (keypoint3DPositions.length > 0) {
-            targetForceEffect /= keypoint3DPositions.length;
+        if (collision) {
+            keypoint3DPositions.forEach(keypoint3D => {
+                const distanceToKeypoint = keypoint3D.distanceTo(v);
+                // Adjust the effect based on distance; this formula can be tweaked
+                targetForceEffect += Math.max(0, 1 - distanceToKeypoint / 2); // Decrease influence with distance
+            });
+
+            // Normalize the effect based on the number of keypoints to prevent excessive distortion
+            if (keypoint3DPositions.length > 0) {
+                targetForceEffect /= keypoint3DPositions.length;
+            }
+        } else {
+            targetForceEffect = 0;
         }
 
         // Lerp current force effect towards target force effect
-        const lerpFactor = 0.02; // Adjust this factor to control the speed of the transition
+        const lerpFactor = 0.1; // Adjust this factor to control the speed of the transition
         currentForceEffects[i] += (targetForceEffect - currentForceEffects[i]) * lerpFactor;
-
 
         const distance = earth.geometry.parameters.radius + noise3D(
             v.x + time * 0.0001, // reduced multiplier for x-axis
@@ -330,6 +316,56 @@ const render = () => {
 
     positions.needsUpdate = true;
     earth.geometry.computeVertexNormals();
+}
+
+const lerp = (start, end, t) => {
+    return start * (1 - t) + end * t;
+}
+
+// Function to map a value from one range to another
+const mapRange = (value, in_min, in_max, out_min, out_max) => {
+    return (value - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+}
+
+
+const render = () => {
+
+    // Reset the positions
+    keypoint3DPositions = [];
+
+    estimatePoses();
+
+    if (poses.length > 0) {
+        poses.forEach((pose, poseIndex) => {
+            drawPoseParticles(pose, poseIndex)
+            collision = checkCollisionForKeyPoints(pose)
+
+            if (collision && !previousCollisionState) {
+                fetchDataPoint();
+                // Assume fetchDataPoint updates a global variable 'temperature'
+                let targetBlobScale = mapRange(globalTemp.data[year], -30, 50, 0.0, 1.0);
+                blobScale = lerp(blobScale, targetBlobScale, 0.08);
+            }
+
+            previousCollisionState = collision;
+
+            let targetBlobScale = collision ? 0.6 : 0.0;
+            let transitionSpeed = collision ? 0.08 : 0.02; // Adjust these values as needed
+
+            blobScale = lerp(blobScale, targetBlobScale, transitionSpeed);
+
+        });
+    }
+    else {
+        blobScale = lerp(blobScale, 0.0, 0.02);
+        collision = false;
+    }
+    // Distort the earth
+    distortEarth();
+
+
+
+
 
     earth.rotation.y += 0.001;
     // renderer.render(scene, camera);
@@ -337,10 +373,26 @@ const render = () => {
     requestAnimationFrame(render);
 }
 
+const fetchDataPoint = () => {
+
+    year += 1;
+    if (year > 2023) {
+        year = 1979;
+    }
+
+    const newYear = year.toString();
+    const newTemp = globalTemp.data[year];
+
+    document.getElementById("yearNumber").innerText = "Year: " + newYear + " | Temp: " + newTemp + "°C";
+
+    // return randomTemp.temp;
+}
+
 
 const init = async () => {
     await setup();
     await initDetector();
+    fetchDataPoint();
     createLights();
     createEarth();
     render();
