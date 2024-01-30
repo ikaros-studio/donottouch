@@ -4,6 +4,7 @@ import { createNoise3D } from 'simplex-noise';
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+import { ConvexHull } from 'three/addons/math/ConvexHull.js';
 
 import * as poseDetection from "@tensorflow-models/pose-detection";
 import * as tf from "@tensorflow/tfjs-core";
@@ -11,20 +12,28 @@ import "@tensorflow/tfjs-backend-webgl";
 
 // Load data
 import globalTemp from "../datasets/data.js";
+import { add } from "@tensorflow/tfjs-core/dist/engine.js";
 
-let scene, camera, renderer, earth, container, blobScale = .2, width = window.innerWidth, height = window.innerHeight, pixelRatio = 1, bloomComposer, poses = [],
+let scene, camera, renderer, earth,
+    container,
+    distortionFactor = 0.0,
+    width = window.innerWidth,
+    height = window.innerHeight,
+    pixelRatio = 1,
+    bloomComposer, poses = [],
     detector = null,
     webcam,
-    numberOfParticlesPerSegment = 10,
-    particleSpread = 0.1,
+    numberOfParticlesPerSegment = 5,
+    particleSpread = 0.2,
     earthCenter,
     earthRadius,
     keypoint3DPositions = [],
     currentForceEffects = [],
     collision = false,
-    currentTemp = null,
     previousCollisionState = false,
-    year = 1979;
+    year = 1979,
+    distortionFadeOutSpeed = 0.02,
+    lastNoiseUpdateTime = Date.now();
 
 const setup = async () => {
 
@@ -58,7 +67,7 @@ const setup = async () => {
     renderer.shadowMap.enabled = true;
     renderer.shadowMapSoft = true;
 
-    scene.fog = new THREE.Fog(0x000000, 10, 950);
+    // scene.fog = new THREE.Fog(0x000000, 10, 950);
 
     container = document.getElementById("canvasContainer");
     container.appendChild(renderer.domElement);
@@ -72,9 +81,9 @@ const setup = async () => {
         0.4,
         0.85
     );
-    bloomPass.threshold = 0.01;
+    bloomPass.threshold = .08;
     bloomPass.strength = 1.5;
-    bloomPass.radius = 1;
+    bloomPass.radius = 1.0;
     bloomComposer.setSize(width * pixelRatio, height * pixelRatio);
     bloomComposer.renderToScreen = true;
     bloomComposer.addPass(renderScene);
@@ -103,10 +112,11 @@ const createLights = () => {
     const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
     scene.add(ambientLight);
 
-    const pointLight = new THREE.PointLight(0xffffff, 0.5);
-
-    scene.add(pointLight);
     scene.add(shadowLight);
+
+    let light = new THREE.PointLight(0xffffff, 1, 0);
+    light.position.set(-.3, 0, 3); // position the light
+    scene.add(light);
 }
 
 const createEarth = () => {
@@ -129,7 +139,7 @@ const createEarth = () => {
     scene.add(earth);
 }
 
-
+// Create noise function
 const noise3D = createNoise3D();
 
 const initDetector = async () => {
@@ -181,78 +191,92 @@ const getY = (yValue) => {
     const sceneY = normalizedY * (camera.fov * Math.PI / 180); // convert to scene coordinates
     return sceneY;
 }
+
 const interpolate = (start, end, fraction) => {
     return start + (end - start) * fraction;
 }
 
-
 const drawPoseParticles = (pose, poseIndex) => {
+
     // Create the particle system per Pose
     const particlesGeometry = new THREE.BufferGeometry();
-    const particlesMaterial = new THREE.PointsMaterial({ size: 0.005, color: 0xfffffff });
+    const size = Math.random() * (0.03 - 0.001) + 0.001;
+    const particlesMaterial = new THREE.PointsMaterial({ size: size, color: 0xfffffff });
     const keyPointParticles = new THREE.Points(particlesGeometry, particlesMaterial);
     keyPointParticles.isParticle = true;
     keyPointParticles.index = poseIndex;
 
-    // Find the keypoints for the nose, left shoulder, and right shoulder
+    const positions = [];
+    // Convert positions to THREE.Vector3 array
+
+    // Optimized function to add particles
+    const addParticles = (x, y, z, spread, count, heightFactor = 1) => {
+        for (let i = 0; i < count; i++) {
+            const theta = Math.random() * Math.PI * 2;
+            const phi = Math.random() * Math.PI * 2;
+
+            positions.push(
+                x + Math.sin(theta) * Math.cos(phi) * spread + Math.random() * 0.1,
+                y + Math.sin(theta) * Math.sin(phi) * spread * heightFactor + Math.random() * 0.1,
+                z
+            );
+        }
+    };
+
+    // Find the keypoints for the nose, left shoulder, and right shoulder to draw the neck
     const noseKeypoint = pose.keypoints.find(k => k.name === 'nose');
     const leftShoulderKeypoint = pose.keypoints.find(k => k.name === 'left_shoulder');
     const rightShoulderKeypoint = pose.keypoints.find(k => k.name === 'right_shoulder');
-
-    pose.particlePositions = [];
 
     if (noseKeypoint && leftShoulderKeypoint && rightShoulderKeypoint) {
         // Calculate the midpoint between the left and right shoulders
         const midShoulderX = interpolate(getX(leftShoulderKeypoint.x), getX(rightShoulderKeypoint.x), 0.5);
         const midShoulderY = interpolate(getY(leftShoulderKeypoint.y), getY(rightShoulderKeypoint.y), 0.5);
 
-        // Create particles in a 2D sphere around the nose
-        for (let i = 0; i < numberOfParticlesPerSegment; i++) {
-            const theta = Math.random() * Math.PI * 2;
-            const phi = Math.random() * Math.PI * 2;
+        addParticles(getX(noseKeypoint.x), (getY(noseKeypoint.y) - 0.1), 0, particleSpread, numberOfParticlesPerSegment, 1.5);
 
-            const x = getX(noseKeypoint.x) + Math.sin(theta) * Math.cos(phi) * particleSpread + Math.random() * 0.1;
-            const y = getY(noseKeypoint.y) - 0.1 + Math.sin(theta) * Math.sin(phi) * particleSpread * 1.5 + Math.random() * 0.1;
-            const z = 0; // Or calculate Z based on your needs
-            pose.particlePositions.push(x, y, z);
-        }
-
-        // Create particles along the line between the nose and the midpoint between the shoulders
+        // Particles along the line between the nose and the midpoint between the shoulders
         for (let i = 0; i < numberOfParticlesPerSegment; i++) {
             const fraction = i / numberOfParticlesPerSegment;
-            const spreadX = (Math.random() - 0.3) * particleSpread;
-            const spreadY = (Math.random() - 0.3) * particleSpread;
-
-            const x = interpolate(getX(noseKeypoint.x), midShoulderX, fraction) + spreadX + Math.random() * 0.1;
-            const y = interpolate(getY(noseKeypoint.y), midShoulderY, fraction) + spreadY + Math.random() * 0.1;
-            const z = 0; // Or calculate Z based on your needs
-            pose.particlePositions.push(x, y, z);
-
+            positions.push(
+                interpolate(getX(noseKeypoint.x), midShoulderX, fraction) + (Math.random() - 0.3) * particleSpread,
+                interpolate(getY(noseKeypoint.y), midShoulderY, fraction) + (Math.random() - 0.3) * particleSpread,
+                0
+            );
         }
     }
     // Iterate over each segment
-    bodySegments.forEach((segment, segmentIndex) => {
-        const startKeypoint = pose.keypoints.find(k => k.name === segment[0]);
-        const endKeypoint = pose.keypoints.find(k => k.name === segment[1]);
+    bodySegments.forEach(([startName, endName]) => {
+        const startKeypoint = pose.keypoints.find(k => k.name === startName);
+        const endKeypoint = pose.keypoints.find(k => k.name === endName);
         if (startKeypoint && endKeypoint) {
-            // Create particles along each segment
             for (let i = 0; i < numberOfParticlesPerSegment; i++) {
                 const fraction = i / numberOfParticlesPerSegment;
-                const x = interpolate(getX(startKeypoint.x), getX(endKeypoint.x), fraction) + (Math.random() - 0.3) * particleSpread;
-                const y = interpolate(getY(startKeypoint.y), getY(endKeypoint.y), fraction) + (Math.random() - 0.3) * particleSpread;
-                const z = 0; // Or calculate Z based on your needs
-                pose.particlePositions.push(x, y, z);
+                positions.push(
+                    interpolate(getX(startKeypoint.x), getX(endKeypoint.x), fraction) + (Math.random() - 0.3) * particleSpread,
+                    interpolate(getY(startKeypoint.y), getY(endKeypoint.y), fraction) + (Math.random() - 0.3) * particleSpread,
+                    0
+                );
+
             }
         }
-        particlesGeometry.setAttribute('position', new THREE.Float32BufferAttribute(pose.particlePositions, 3));
-        scene.add(keyPointParticles);
-
     });
+
+    particlesGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+
+    if (!scene.children.includes(keyPointParticles)) {
+        scene.add(keyPointParticles);
+    }
+
+    // increase transparency of the particles over time
+    const startTime = Date.now();
+    particlesMaterial.opacity = 1 - (Date.now() - startTime) / 500;
+
+
     setTimeout(() => {
         scene.remove(keyPointParticles);
         particlesGeometry.dispose();
         particlesMaterial.dispose();
-
     }, 500); // 10000 milliseconds = 10 seconds
 }
 
@@ -268,23 +292,18 @@ const checkCollisionForKeyPoints = (pose) => {
             // applyDistortion(keypoint3DPosition);
             isCollisionDetected = true;
         }
-        else {
-        }
     });
     return isCollisionDetected;
 };
 
-const distortEarth = () => {
+const distortEarth = (time) => {
 
     const positions = earth.geometry.attributes.position;
-
-    // Distortion effect
-    let time = Date.now()
 
     for (let i = 0; i < positions.count; i++) {
         let v = new THREE.Vector3().fromBufferAttribute(positions, i);
         v.normalize();
-        let targetForceEffect = 1.5;
+        let targetForceEffect = 2.5;
 
         if (collision) {
             keypoint3DPositions.forEach(keypoint3D => {
@@ -302,20 +321,29 @@ const distortEarth = () => {
         }
 
         // Lerp current force effect towards target force effect
-        const lerpFactor = 0.1; // Adjust this factor to control the speed of the transition
+        const lerpFactorIn = 0.1; // Adjust this factor to control the speed of the fade in
+        const lerpFactorOut = 0.0005; // Adjust this factor to control the speed of the fade out
+
+        let isFadingIn = targetForceEffect > currentForceEffects[i];
+        let lerpFactor = isFadingIn ? lerpFactorIn : lerpFactorOut;
+
+
         currentForceEffects[i] += (targetForceEffect - currentForceEffects[i]) * lerpFactor;
 
         const distance = earth.geometry.parameters.radius + noise3D(
             v.x + time * 0.0001, // reduced multiplier for x-axis
             v.y + time * 0.0001,  // reduced multiplier for y-axis
             v.z + time * 0.0001   // reduced multiplier for z-axis
-        ) * blobScale * currentForceEffects[i];
+        ) * distortionFactor * currentForceEffects[i];
         v.multiplyScalar(distance);
         positions.setXYZ(i, v.x, v.y, v.z);
     }
 
     positions.needsUpdate = true;
     earth.geometry.computeVertexNormals();
+
+    lastNoiseUpdateTime = time; // Reset the last update time
+
 }
 
 const lerp = (start, end, t) => {
@@ -330,38 +358,58 @@ const mapRange = (value, in_min, in_max, out_min, out_max) => {
 
 const render = () => {
 
+    // Distortion effect
+    let time = Date.now()
     // Reset the positions
     keypoint3DPositions = [];
 
     estimatePoses();
 
+    // ... if there is a pose detected
     if (poses.length > 0) {
+
+        // For each person detected...
         poses.forEach((pose, poseIndex) => {
+            // ... draw the particles
             drawPoseParticles(pose, poseIndex)
+
+            // .. check for any collision with the earth
             collision = checkCollisionForKeyPoints(pose)
 
+
+            // .. if there is a new collision, update the temperature
             if (collision && !previousCollisionState) {
                 fetchDataPoint();
-                // Assume fetchDataPoint updates a global variable 'temperature'
-                let targetBlobScale = mapRange(globalTemp.data[year], -30, 50, 0.0, 1.0);
-                blobScale = lerp(blobScale, targetBlobScale, 0.08);
+                console.log("New collision detected! Updating temperature to", globalTemp.data[year]);
             }
 
-            previousCollisionState = collision;
+            // ... if there is a collision, update the temperature and init the distortion
+            if (collision) {
+                // ... set distortion factor based on temperature
+                let targetBlobScale = mapRange(globalTemp.data[year], -30, 50, 0.6, 1.0);
 
-            let targetBlobScale = collision ? 0.6 : 0.0;
-            let transitionSpeed = collision ? 0.08 : 0.02; // Adjust these values as needed
+                // ... lerp the distortion factor
+                distortionFactor = lerp(distortionFactor, targetBlobScale, 0.08);
+            }
+            else {
+                // ... if there is no collision, revert to 0
+                distortionFactor = lerp(distortionFactor, 0.0, distortionFadeOutSpeed);
+            }
 
-            blobScale = lerp(blobScale, targetBlobScale, transitionSpeed);
 
         });
     }
     else {
-        blobScale = lerp(blobScale, 0.0, 0.02);
+        distortionFactor = lerp(distortionFactor, 0.0, distortionFadeOutSpeed);
+        console.log("No collision detected! reverting to 0",);
         collision = false;
     }
+
+    // ... update the previous collision state
+    previousCollisionState = collision;
+
     // Distort the earth
-    distortEarth();
+    distortEarth(time);
 
     earth.rotation.y += 0.001;
     // renderer.render(scene, camera);
