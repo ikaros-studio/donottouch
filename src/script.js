@@ -4,7 +4,6 @@ import { createNoise3D } from 'simplex-noise';
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
-import { ConvexHull } from 'three/addons/math/ConvexHull.js';
 
 import * as poseDetection from "@tensorflow-models/pose-detection";
 import * as tf from "@tensorflow/tfjs-core";
@@ -12,7 +11,6 @@ import "@tensorflow/tfjs-backend-webgl";
 
 // Load data
 import globalTemp from "../datasets/data.js";
-import { add } from "@tensorflow/tfjs-core/dist/engine.js";
 
 let scene, camera, renderer, earth,
     container,
@@ -28,18 +26,27 @@ let scene, camera, renderer, earth,
     earthCenter,
     earthRadius,
     keypoint3DPositions = [],
-    currentForceEffects = [],
     collision = false,
     previousCollisionState = false,
     year = 1979,
     distortionFadeOutSpeed = 0.02,
-    lastNoiseUpdateTime = Date.now();
+    previousKeypoint3DPositions = [],
+    lastNoiseUpdateTime = Date.now(),
+    avgspeed = 0,
+    targetSpeed = 0,
+    maxSpeed = 1,
+    distortionSpeed = 0.0006,
+    originalEarthVertices,
+    maxDistortionFactor = 0.9,
+    baseDistortionSpeed = 0.00008
+    ;
+
 
 const setup = async () => {
 
     // Init Tensorflow
     await tf.ready();
-    console.log("TF is ready");
+    // console.log("TF is ready");
 
     // Webcam setup with error handling
     webcam = document.getElementById("webcam");
@@ -47,7 +54,7 @@ const setup = async () => {
         const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
         webcam.srcObject = stream;
         webcam.onloadedmetadata = () => webcam.play();
-        console.log("Webcam is ready.");
+        // console.log("Webcam is ready.");
     } catch (error) {
         console.error("Error accessing the webcam", error);
     }
@@ -122,9 +129,9 @@ const createLights = () => {
 const createEarth = () => {
     const textureLoader = new THREE.TextureLoader();
     const earthTexture = textureLoader.load("/textures/earthTexture.jpeg");
-    earthTexture.anisotropy = 8;
+    earthTexture.anisotropy = 4;
 
-    const icosahedronGeometry = new THREE.IcosahedronGeometry(0.7, 32);
+    const icosahedronGeometry = new THREE.IcosahedronGeometry(0.7, 16);
     const lambertMaterial = new THREE.MeshPhongMaterial({ map: earthTexture });
 
     earth = new THREE.Mesh(icosahedronGeometry, lambertMaterial);
@@ -132,10 +139,14 @@ const createEarth = () => {
     // Compute the bounding sphere of the geometry
     earth.geometry.computeBoundingSphere();
 
-    currentForceEffects = new Array(earth.geometry.attributes.position.count).fill(0);
+    // currentForceEffects = new Array(earth.geometry.attributes.position.count).fill(0);
     // Get the center and radius of the bounding sphere
     earthCenter = earth.geometry.boundingSphere.center;
     earthRadius = earth.geometry.boundingSphere.radius;
+
+    // Store original vertex positions
+    originalEarthVertices = earth.geometry.attributes.position.array.slice();
+
     scene.add(earth);
 }
 
@@ -154,7 +165,7 @@ const initDetector = async () => {
         poseDetection.SupportedModels.MoveNet,
         detectorConfig
     );
-    console.log("Pose detector is initialized.");
+    // console.log("Pose detector is initialized.");
 }
 
 const estimatePoses = async () => {
@@ -280,71 +291,71 @@ const drawPoseParticles = (pose, poseIndex) => {
     }, 500); // 10000 milliseconds = 10 seconds
 }
 
-// Function to project 2D keypoints to 3D space and check collision
 const checkCollisionForKeyPoints = (pose) => {
     let isCollisionDetected = false;
-    pose.keypoints.forEach(keypoint => {
+
+    pose.keypoints.forEach((keypoint, index) => {
+
         // check if keypoint is inside the earth
         const keypoint3DPosition = new THREE.Vector3(getX(keypoint.x), getY(keypoint.y), 0);
+
+        // Ensure previousKeypoint3DPositions has an entry at this index
+        if (previousKeypoint3DPositions[index]) {
+            const speed = keypoint3DPosition.distanceTo(previousKeypoint3DPositions[index]);
+            targetSpeed += speed; // Accumulate speeds for averaging
+            // Only consider speeds above a threshold
+            if (speed > 0.4) {
+                avgspeed += speed / pose.keypoints.length
+            }
+        }
+
         keypoint3DPositions.push(keypoint3DPosition);
         const distanceToEarthCenter = keypoint3DPosition.distanceTo(earthCenter);
         if (distanceToEarthCenter < earthRadius) {
             // applyDistortion(keypoint3DPosition);
             isCollisionDetected = true;
         }
+        previousKeypoint3DPositions[index] = keypoint3DPosition; // Update the position for the current index
+
     });
+
+
+    // Average the target speed
+    targetSpeed = Math.min(maxSpeed, Math.max(.3, targetSpeed / pose.keypoints.length / 0.2));
+
+    // Ensure avgspeed doesn't exceed maxSpeed
+    avgspeed = Math.min(maxSpeed, avgspeed);
+
     return isCollisionDetected;
 };
 
-const distortEarth = (time) => {
-
+const distortEarth = (time, collision) => {
     const positions = earth.geometry.attributes.position;
 
     for (let i = 0; i < positions.count; i++) {
         let v = new THREE.Vector3().fromBufferAttribute(positions, i);
         v.normalize();
-        let targetForceEffect = 2.5;
 
-        if (collision) {
-            keypoint3DPositions.forEach(keypoint3D => {
-                const distanceToKeypoint = keypoint3D.distanceTo(v);
-                // Adjust the effect based on distance; this formula can be tweaked
-                targetForceEffect += Math.max(0, 1 - distanceToKeypoint / 2); // Decrease influence with distance
-            });
+        let totalDistortion;
 
-            // Normalize the effect based on the number of keypoints to prevent excessive distortion
-            if (keypoint3DPositions.length > 0) {
-                targetForceEffect /= keypoint3DPositions.length;
-            }
-        } else {
-            targetForceEffect = 0;
-        }
+        totalDistortion = noise3D(
+            v.x + time * distortionSpeed,
+            v.y + time * distortionSpeed,
+            v.z + time * distortionSpeed,
+        ) * distortionFactor; // * avgspeed;
 
-        // Lerp current force effect towards target force effect
-        const lerpFactorIn = 0.1; // Adjust this factor to control the speed of the fade in
-        const lerpFactorOut = 0.0005; // Adjust this factor to control the speed of the fade out
+        // totalDistortion = Math.min(totalDistortion, maxDistortion);
+        const distance = earth.geometry.parameters.radius + totalDistortion;
 
-        let isFadingIn = targetForceEffect > currentForceEffects[i];
-        let lerpFactor = isFadingIn ? lerpFactorIn : lerpFactorOut;
-
-
-        currentForceEffects[i] += (targetForceEffect - currentForceEffects[i]) * lerpFactor;
-
-        const distance = earth.geometry.parameters.radius + noise3D(
-            v.x + time * 0.0001, // reduced multiplier for x-axis
-            v.y + time * 0.0001,  // reduced multiplier for y-axis
-            v.z + time * 0.0001   // reduced multiplier for z-axis
-        ) * distortionFactor * currentForceEffects[i];
         v.multiplyScalar(distance);
         positions.setXYZ(i, v.x, v.y, v.z);
     }
 
     positions.needsUpdate = true;
     earth.geometry.computeVertexNormals();
-
-    lastNoiseUpdateTime = time; // Reset the last update time
-
 }
+
+
 
 const lerp = (start, end, t) => {
     return start * (1 - t) + end * t;
@@ -363,8 +374,11 @@ const render = () => {
     // Reset the positions
     keypoint3DPositions = [];
 
-    estimatePoses();
+    if (time - lastNoiseUpdateTime > 3000) {
+        estimatePoses();
+        resetEarthVertices()
 
+    }
     // ... if there is a pose detected
     if (poses.length > 0) {
 
@@ -376,40 +390,63 @@ const render = () => {
             // .. check for any collision with the earth
             collision = checkCollisionForKeyPoints(pose)
 
+            const fadeSpeed = collision ? 0.05 : 0.1; // Faster fade out when no collision
+            avgspeed = lerp(avgspeed, targetSpeed, fadeSpeed); // Smooth transition to the target speed
 
             // .. if there is a new collision, update the temperature
             if (collision && !previousCollisionState) {
                 fetchDataPoint();
-                console.log("New collision detected! Updating temperature to", globalTemp.data[year]);
+            }
+
+            if (time - lastNoiseUpdateTime > 3000) {
+
+                // ... if the average speed is above a threshold, increase the distortion speed
+                if (collision && (avgspeed > 0.4)) {
+                    distortionSpeed = lerp(distortionSpeed, 0.0009, 0.000000000001);
+                }
+                // ... if the average speed is below a threshold, decrease the distortion speed
+                else if (distortionSpeed > baseDistortionSpeed) {
+                    distortionSpeed = lerp(distortionSpeed, baseDistortionSpeed, 0.00000000001);
+                }
+                else {
+                    distortionSpeed = baseDistortionSpeed
+                }
             }
 
             // ... if there is a collision, update the temperature and init the distortion
             if (collision) {
+                let speed = 0;
+                if (avgspeed > 0.4) {
+                    speed = avgspeed
+                }
                 // ... set distortion factor based on temperature
-                let targetBlobScale = mapRange(globalTemp.data[year], -30, 50, 0.6, 1.0);
-
-                // ... lerp the distortion factor
-                distortionFactor = lerp(distortionFactor, targetBlobScale, 0.08);
+                let targetBlobScale = (mapRange(globalTemp.data[year], -30, 50, .01, .1)) + (speed);
+                // ... lerp the distortion factor (fade in)
+                distortionFactor = lerp(distortionFactor, targetBlobScale, 0.1);
             }
             else {
-                // ... if there is no collision, revert to 0
+                // ... if there is no collision, revert to 0 (fade out)
                 distortionFactor = lerp(distortionFactor, 0.0, distortionFadeOutSpeed);
             }
-
 
         });
     }
     else {
+        // ... if there is no pose detected, revert the distortion to 0
         distortionFactor = lerp(distortionFactor, 0.0, distortionFadeOutSpeed);
-        console.log("No collision detected! reverting to 0",);
         collision = false;
+        // reset earth vertices
     }
 
     // ... update the previous collision state
     previousCollisionState = collision;
 
-    // Distort the earth
-    distortEarth(time);
+    // only distort every 100ms
+    if (time - lastNoiseUpdateTime > 3000) {
+        // Distort the earth
+        distortEarth(time, collision);
+    }
+
 
     earth.rotation.y += 0.001;
     // renderer.render(scene, camera);
@@ -432,6 +469,11 @@ const fetchDataPoint = () => {
     // return randomTemp.temp;
 }
 
+const resetEarthVertices = () => {
+    const positions = earth.geometry.attributes.position;
+    positions.array = originalEarthVertices.slice();
+    positions.needsUpdate = true;
+}
 
 const init = async () => {
     await setup();
