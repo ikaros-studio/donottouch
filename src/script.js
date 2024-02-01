@@ -21,8 +21,8 @@ let scene, camera, renderer, earth,
     bloomComposer, poses = [],
     detector = null,
     webcam,
-    numberOfParticlesPerSegment = 5,
-    particleSpread = 0.2,
+    numberOfParticlesPerSegment = 4,
+    particleSpread = 0.1,
     earthCenter,
     earthRadius,
     keypoint3DPositions = [],
@@ -211,7 +211,7 @@ const drawPoseParticles = (pose, poseIndex) => {
 
     // Create the particle system per Pose
     const particlesGeometry = new THREE.BufferGeometry();
-    const size = Math.random() * (0.03 - 0.001) + 0.001;
+    const size = Math.random() * (0.01 - 0.001) + 0.001;
     const particlesMaterial = new THREE.PointsMaterial({ size: size, color: 0xfffffff });
     const keyPointParticles = new THREE.Points(particlesGeometry, particlesMaterial);
     keyPointParticles.isParticle = true;
@@ -304,7 +304,7 @@ const checkCollisionForKeyPoints = (pose) => {
             const speed = keypoint3DPosition.distanceTo(previousKeypoint3DPositions[index]);
             targetSpeed += speed; // Accumulate speeds for averaging
             // Only consider speeds above a threshold
-            if (speed > 0.4) {
+            if (speed > 0.3) {
                 avgspeed += speed / pose.keypoints.length
             }
         }
@@ -401,7 +401,7 @@ const render = () => {
             if (time - lastNoiseUpdateTime > 3000) {
 
                 // ... if the average speed is above a threshold, increase the distortion speed
-                if (collision && (avgspeed > 0.4)) {
+                if (collision && (avgspeed > 0.3)) {
                     distortionSpeed = lerp(distortionSpeed, 0.0009, 0.000000000001);
                 }
                 // ... if the average speed is below a threshold, decrease the distortion speed
@@ -416,7 +416,7 @@ const render = () => {
             // ... if there is a collision, update the temperature and init the distortion
             if (collision) {
                 let speed = 0;
-                if (avgspeed > 0.4) {
+                if (avgspeed > 0.3) {
                     speed = avgspeed
                 }
                 // ... set distortion factor based on temperature
