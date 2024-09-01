@@ -1,4 +1,4 @@
-import { updateAvgSpeed, avgspeed, targetSpeed, distortionSpeed, checkCollisionForKeyPoints, keypoint3DPositions, updateDistotionFactor, distortionFactor, distortEarth, updateDistortionSpeed } from "./distortion";
+import { updateAvgSpeed, avgspeed, targetSpeed, distortionSpeed, checkCollisionForKeyPoints, keypoint3DPositions, updateDistortionFactor, distortionFactor, distortEarth, updateDistortionSpeed } from "./distortion";
 import { poses, estimatePoses } from "./poseDetection";
 import { earth, drawPoseParticles } from "./createSceneObjects";
 import { renderer, scene, camera, bloomComposer } from "./sceneSetup";
@@ -11,7 +11,6 @@ let
     poseCollisionStates = [], // Track collision states of poses
     frameCount = 0; // Track the frame count
 
-
 export const render = () => {
 
     // Define Time
@@ -22,7 +21,7 @@ export const render = () => {
 
     estimatePoses(); // Continuously update the pose positions
     // Reset the positions
-    if (frameCount % 120 === 0) {
+    if (frameCount % 30 === 0) {
         resetEarthVertices() // Continuously reset the earth vertices
     }
 
@@ -52,18 +51,18 @@ export const render = () => {
             // Update the collision state for the current pose
             poseCollisionStates[poseIndex] = isCurrentlyColliding;
 
-            const fadeSpeed = 0.1; // Faster fade out when no collision
+            const fadeSpeed = 0.05; // Faster fade out when no collision
             updateAvgSpeed(lerp(avgspeed, targetSpeed, fadeSpeed)); // Smooth transition to the target speed
 
             if (isCurrentlyColliding) {
                 const speed = avgspeed > 0.1 ? avgspeed : 0; // TODO: find out what this does
                 const targetBlobScale = mapRange(globalTemp.data[year], -30, 50, 0.01, 0.1) + speed;
-                updateDistotionFactor(lerp(distortionFactor, targetBlobScale, 0.1));
+                updateDistortionFactor(lerp(distortionFactor, targetBlobScale, 0.03));
             }
 
             else {
                 // ... if there is no pose and hence collision detected, revert the distortion to 0
-                updateDistotionFactor(lerp(distortionFactor, 0.0, distortionFadeOutSpeed));
+                updateDistortionFactor(lerp(distortionFactor, 0.0, distortionFadeOutSpeed));
                 collision = false;
             }
         });
@@ -71,7 +70,7 @@ export const render = () => {
 
     else {
         // ... if there is no pose and hence collision detected, revert the distortion to 0
-        updateDistotionFactor(lerp(distortionFactor, 0.0, distortionFadeOutSpeed));
+        updateDistortionFactor(lerp(distortionFactor, 0.0, distortionFadeOutSpeed));
         collision = false;
     }
 

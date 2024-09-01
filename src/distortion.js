@@ -55,7 +55,7 @@ export const checkCollisionForKeyPoints = (pose) => {
 // Create noise function
 const noise3D = createNoise3D();
 
-export let distortionSpeed = 0.0006,
+export let distortionSpeed = 0.00045,
     distortionFactor = 0.0;
 
 export const distortEarth = (time) => {
@@ -92,6 +92,6 @@ export function updateDistortionSpeed(newSpeed) {
     distortionSpeed = newSpeed
 }
 
-export function updateDistotionFactor(newFactor) {
+export function updateDistortionFactor(newFactor) {
     distortionFactor = newFactor
 }
