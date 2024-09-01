@@ -16,7 +16,7 @@ export const initDetector = async () => {
         modelType: poseDetection.movenet.modelType.MULTIPOSE_LIGHTNING,
         enableTracking: true,
         trackerType: poseDetection.TrackerType.BoundingBox,
-        modelUrl: '../assets/models/model.json', // Update path to point to your local model
+        modelUrl: '../models/model.json', // Update path to point to your local model
     };
 
     detector = await poseDetection.createDetector(
