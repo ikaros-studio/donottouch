@@ -54,6 +54,12 @@ export const render = () => {
                 const targetBlobScale = mapRange(globalTemp.data[year], -30, 50, 0.01, 0.1) + speed;
                 updateDistotionFactor(lerp(distortionFactor, targetBlobScale, 0.1));
             }
+
+            else {
+                // ... if there is no pose and hence collision detected, revert the distortion to 0
+                updateDistotionFactor(lerp(distortionFactor, 0.0, distortionFadeOutSpeed));
+                collision = false;
+            }
         });
     }
 
