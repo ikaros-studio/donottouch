@@ -24,4 +24,5 @@ debug.log
 .DS_Store
 ```
 
-## everything with starting with dot
+## Everything else with starting with dot
+/.*
