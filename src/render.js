@@ -8,7 +8,8 @@ import { fetchDataPoint, globalTemp, year } from './data.js';
 let
     collision = false, // Determine if a pose collides with the earth 
     distortionFadeOutSpeed = 0.02, // How fast the distortion stops after all poses don't collide anymore
-    poseCollisionStates = []; // Track collision states of poses
+    poseCollisionStates = [], // Track collision states of poses
+    frameCount = 0; // Track the frame count
 
 
 export const render = () => {
@@ -20,7 +21,12 @@ export const render = () => {
     keypoint3DPositions.length = 0;  // This clears the array without reassigning it
 
     estimatePoses(); // Continuously update the pose positions
-    resetEarthVertices() // Continuously reset the earth vertices
+    // Reset the positions
+    if (frameCount % 120 === 0) {
+        resetEarthVertices() // Continuously reset the earth vertices
+    }
+
+    frameCount++; // Increment the frame count
 
     // ... if there is a pose detected
     if (poses.length > 0) {

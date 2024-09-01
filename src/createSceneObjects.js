@@ -50,8 +50,8 @@ export const createEarth = () => {
     scene.add(earth);
 };
 
-let numberOfParticlesPerSegment = 4,
-    particleSpread = 0.1;
+let numberOfParticlesPerSegment = 2,
+    particleSpread = 0.3;
 
 export const drawPoseParticles = (pose, poseIndex) => {
 
