@@ -9,11 +9,51 @@ let
 
 export let keypoint3DPositions = [],
     targetSpeed = 0, // set target speed (based on current speed)
-    avgspeed = 0;
+    avgspeed = 0,
+    pose2DMovement = new THREE.Vector2(0, 0),
+    previousLeftWrist = { x: 0, y: 0 },
+    previousRightWrist = { x: 0, y: 0 };
 
 
 export const checkCollisionForKeyPoints = (pose) => {
+
     let isCollisionDetected = false;
+
+    // const leftWrist = pose.keypoints[9];
+    // const rightWrist = pose.keypoints[10];
+    // const leftWrist2D = new THREE.Vector2(getX(leftWrist.x), getY(leftWrist.y));
+    // const rightWrist2D = new THREE.Vector2(getX(rightWrist.x), getY(rightWrist.y));
+
+    // // Calculate the current average position
+    // const currentPose2DMovement = new THREE.Vector2(
+    //     (leftWrist2D.x + rightWrist2D.x) / 2,
+    //     (leftWrist2D.y + rightWrist2D.y) / 2
+    // );
+
+    // // Track previous wrist positions (ensure these are updated correctly in your loop)
+    // const previousLeftWrist2D = new THREE.Vector2(getX(previousLeftWrist.x), getY(previousLeftWrist.y));
+    // const previousRightWrist2D = new THREE.Vector2(getX(previousRightWrist.x), getY(previousRightWrist.y));
+
+    // // Calculate the average of the previous wrist positions
+    // const previousPose2DMovement = new THREE.Vector2(
+    //     (previousLeftWrist2D.x + previousRightWrist2D.x) / 2,
+    //     (previousLeftWrist2D.y + previousRightWrist2D.y) / 2
+    // );
+
+    // // Define a threshold for movement relevance
+    // const movementThreshold = 0.2;
+    // console.log(previousPose2DMovement.distanceTo(currentPose2DMovement))
+    // // Check if the movement is relevant by comparing with the previous position
+    // if (previousPose2DMovement.distanceTo(currentPose2DMovement) >= movementThreshold) {
+    //     // Smoothen the movement by averaging with the previous position
+    //     pose2DMovement.lerp(currentPose2DMovement, 0.01); // 0.05 is the smoothing factor, adjust as needed
+    // } else {
+    //     // If the movement is not relevant, set the movement to zero or maintain current
+    // }
+
+    // // Update previous positions for the next frame
+    // previousLeftWrist = leftWrist;
+    // previousRightWrist = rightWrist;
 
     // Loop through poses
     pose.keypoints.forEach((keypoint, index) => {
@@ -60,12 +100,16 @@ export let distortionSpeed = 0.00045,
 
 export const distortEarth = (time) => {
     const positions = earth.geometry.attributes.position;
+    // Convert 2D movement to 3D vector
+    // const direction = new THREE.Vector3(pose2DMovement.x, pose2DMovement.y, 0).normalize();
 
     for (let i = 0; i < positions.count; i++) {
-        let v = new THREE.Vector3().fromBufferAttribute(positions, i);
+        let v = new THREE.Vector3().fromBufferAttribute(positions, i).normalize();
         v.normalize();
 
         let totalDistortion;
+        // Calculate alignment with smoothed direction
+        // const alignment = v.dot(direction);
 
         totalDistortion = noise3D(
             v.x + time * distortionSpeed,
@@ -73,7 +117,9 @@ export const distortEarth = (time) => {
             v.z + time * distortionSpeed,
         ) * distortionFactor; // * avgspeed;
 
-        // totalDistortion = Math.min(totalDistortion, maxDistortion);
+        // Amplify distortion based on alignment with smoothed direction
+        // totalDistortion += alignment * .2; // Scale this factor as needed
+
         const distance = earth.geometry.parameters.radius + totalDistortion;
 
         v.multiplyScalar(distance);

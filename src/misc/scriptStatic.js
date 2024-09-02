@@ -190,7 +190,6 @@ const render = () => {
 
     if (time - lastNoiseUpdateTime > 3000) {
         resetEarthVertices()
-
     }
 
 
